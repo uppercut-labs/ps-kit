@@ -1,0 +1,7 @@
+dist/
+TestResults/
+testResults.xml
+*.nupkg
+.DS_Store
+.env*
+*.pem
