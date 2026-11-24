@@ -7,6 +7,7 @@ PowerShell is part of the daily workflow here, not an afterthought: the modules 
 | Package | What it does |
 | --- | --- |
 | [`TailscaleServe`](packages/tailscale-serve) | Add, remove and list Tailscale Serve path mappings: idempotent, verified by reading the configuration back, and tailnet only because it refuses to act where Funnel is enabled |
+| [`NoActivate`](packages/no-activate) | Starts a Windows program so its first window never takes keyboard focus, keeps its windows on one display without activating them, and can run it on a private desktop that is never shown. Windows only |
 
 ## Working in this repo
 
