@@ -6,7 +6,7 @@ PowerShell is part of the daily workflow here, not an afterthought: the modules 
 
 | Package | What it does |
 | --- | --- |
-| [`TailscaleServe`](packages/tailscale-serve) | Add, remove and list Tailscale Serve path mappings: idempotent, verified by reading the configuration back, and tailnet only because it refuses to act where Funnel is enabled |
+| [`TailscaleServe`](packages/tailscale-serve) | Add, remove and list Tailscale Serve path mappings, and (0.2.0) set up Tailscale Services (`svc:` names) with drain, clear, advertise, read-back and a receipt: idempotent, verified by reading the configuration back, and tailnet only because nothing here runs Funnel and path changes are refused where it is enabled |
 
 ## Working in this repo
 
