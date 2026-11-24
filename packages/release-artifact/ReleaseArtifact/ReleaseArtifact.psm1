@@ -8,6 +8,13 @@ if ($PSVersionTable.PSVersion.Major -ge 6) { $script:OnWindows = [bool]$IsWindow
 $script:Ascii = New-Object System.Text.ASCIIEncoding
 $script:Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
+function Resolve-ReleasePath {
+    # A path the caller gave, made absolute against PowerShell's current location (not the process's folder, which
+    # Push-Location and Set-Location do not change), with . and .. segments removed.
+    param([string]$Path)
+    [IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path))
+}
+
 function Invoke-ReleaseGit {
     param([string]$WorkingDirectory, [string[]]$Arguments)
     $previous = Get-Location
@@ -60,7 +67,7 @@ function New-ReleaseStage {
         [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')][string]$Name,
         [string]$Folder = 'release'
     )
-    $parent = [IO.Path]::GetFullPath((Join-Path $Root $Folder))
+    $parent = Resolve-ReleasePath (Join-Path $Root $Folder)
     $stage = [IO.Path]::GetFullPath((Join-Path $parent $Name))
     if ((Split-Path -Parent $stage) -ne $parent) { throw "Refusing to use a stage folder outside '$parent': $stage" }
     if (-not $PSCmdlet.ShouldProcess($stage, 'Create an empty stage folder')) { return }
@@ -72,7 +79,7 @@ function New-ReleaseStage {
 function Get-StageFile {
     # Every file under a folder, sorted by relative path with an ordinal comparison (the same on every system).
     param([string]$Stage, [string[]]$Exclude = @())
-    $root = [IO.Path]::GetFullPath($Stage).TrimEnd('\', '/')
+    $root = (Resolve-ReleasePath $Stage).TrimEnd('\', '/')
     $list = New-Object System.Collections.Generic.List[object]
     foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
         $relative = $file.FullName.Substring($root.Length + 1).Replace('\', '/')
@@ -108,7 +115,7 @@ function Write-ReleaseManifest {
             [ordered]@{ path = $_.Relative; bytes = $_.Bytes; sha256 = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant() }
         })
     }
-    $path = Join-Path ([IO.Path]::GetFullPath($Stage)) $FileName
+    $path = Join-Path (Resolve-ReleasePath $Stage) $FileName
     if (-not $PSCmdlet.ShouldProcess($path, 'Write the release manifest')) { return }
     [IO.File]::WriteAllText($path, (($document | ConvertTo-Json -Depth 8) + "`n"), $script:Utf8NoBom)
     $path
@@ -134,7 +141,7 @@ function Write-Sha256Sums {
         "$((Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant())  $($_.Relative)"
     })
     if ($lines.Count -eq 0) { throw "There are no files under '$Root' to list." }
-    $path = Join-Path ([IO.Path]::GetFullPath($Root)) $FileName
+    $path = Join-Path (Resolve-ReleasePath $Root) $FileName
     if (-not $PSCmdlet.ShouldProcess($path, 'Write the checksum file')) { return }
     [IO.File]::WriteAllText($path, (($lines -join "`n") + "`n"), $script:Ascii)
     $lines
@@ -157,7 +164,7 @@ function Test-Sha256Sums {
         [string]$FileName = 'SHA256SUMS',
         [switch]$AllowExtra
     )
-    $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\', '/')
+    $rootFull = (Resolve-ReleasePath $Root).TrimEnd('\', '/')
     $sumsPath = Join-Path $rootFull $FileName
     if (-not (Test-Path -LiteralPath $sumsPath -PathType Leaf)) { throw "The checksum file was not found: $sumsPath" }
     $problems = New-Object System.Collections.Generic.List[string]
@@ -202,10 +209,10 @@ function New-ReleaseArchive {
         [Parameter(Mandatory = $true)][ValidatePattern('^[A-Za-z0-9][A-Za-z0-9._-]*$')][string]$Name,
         [switch]$BinaryMarker
     )
-    $stageFull = [IO.Path]::GetFullPath($Stage)
+    $stageFull = Resolve-ReleasePath $Stage
     $files = @(Get-StageFile -Stage $stageFull)
     if ($files.Count -eq 0) { throw "The stage folder is empty: $stageFull" }
-    $outputFull = [IO.Path]::GetFullPath($OutputDirectory)
+    $outputFull = Resolve-ReleasePath $OutputDirectory
     $zipPath = Join-Path $outputFull "$Name.zip"
     if (-not $PSCmdlet.ShouldProcess($zipPath, 'Create the release archive')) { return }
     New-Item -ItemType Directory -Force -Path $outputFull | Out-Null
@@ -274,7 +281,7 @@ function Test-ReleaseArchive {
         [string]$EvidencePath,
         [switch]$KeepExtracted
     )
-    $archive = [IO.Path]::GetFullPath($Path)
+    $archive = Resolve-ReleasePath $Path
     if (-not (Test-Path -LiteralPath $archive -PathType Leaf)) { throw "The release archive was not found: $archive" }
     $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
     $sidecar = "$archive.sha256"
@@ -342,7 +349,7 @@ function Test-ReleaseArchive {
             VerifiedAtUtc  = (Get-Date).ToUniversalTime().ToString('o')
         }
         if ($EvidencePath) {
-            $evidencePath = [IO.Path]::GetFullPath($EvidencePath)
+            $evidencePath = Resolve-ReleasePath $EvidencePath
             $folder = Split-Path -Parent $evidencePath
             if ($folder -and -not (Test-Path -LiteralPath $folder)) { New-Item -ItemType Directory -Force -Path $folder | Out-Null }
             [IO.File]::WriteAllText($evidencePath, ($evidence | ConvertTo-Json -Depth 8), $script:Utf8NoBom)

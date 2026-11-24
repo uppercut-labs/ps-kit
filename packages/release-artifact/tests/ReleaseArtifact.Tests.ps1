@@ -363,6 +363,21 @@ Describe 'ReleaseArtifact' {
         }
     }
 
+    Describe 'Relative paths' {
+        It 'resolve against the current PowerShell location, as Push-Location sets it' {
+            Push-Location -LiteralPath $work
+            try {
+                $stage = New-ReleaseStage -Root '.' -Name 'rel'
+                $stage | Should -Be ([IO.Path]::GetFullPath((Join-Path (Join-Path $work 'release') 'rel')))
+                Set-RaFile $stage 'a.txt' 'a'
+                Write-Sha256Sums -Root (Join-Path 'release' 'rel') | Out-Null
+                $zip = New-ReleaseArchive -Stage (Join-Path 'release' 'rel') -OutputDirectory 'out' -Name 'rel'
+                $zip.Path | Should -Be ([IO.Path]::GetFullPath((Join-Path (Join-Path $work 'out') 'rel.zip')))
+                (Test-ReleaseArchive (Join-Path 'out' 'rel.zip')).Files | Should -Be 2
+            } finally { Pop-Location }
+        }
+    }
+
     Describe 'Whole build' {
         It 'stages, writes manifest and sums, zips, and the finished archive passes its own smoke test' {
             $stage = New-ReleaseStage -Root $work -Name 'app-2.0.0'
