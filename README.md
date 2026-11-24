@@ -7,6 +7,7 @@ PowerShell is part of the daily workflow here, not an afterthought: the modules 
 | Package | What it does |
 | --- | --- |
 | [`TailscaleServe`](packages/tailscale-serve) | Add, remove and list Tailscale Serve path mappings: idempotent, verified by reading the configuration back, and tailnet only because it refuses to act where Funnel is enabled |
+| [`DownloadVerified`](packages/download-verified) | Downloads a file over HTTPS only if its pinned SHA-256 matches, extracts a zip without letting an entry escape the destination, installs named files from it, and writes a receipt |
 
 ## Working in this repo
 
