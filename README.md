@@ -7,6 +7,7 @@ PowerShell is part of the daily workflow here, not an afterthought: the modules 
 | Package | What it does |
 | --- | --- |
 | [`TailscaleServe`](packages/tailscale-serve) | Add, remove and list Tailscale Serve path mappings: idempotent, verified by reading the configuration back, and tailnet only because it refuses to act where Funnel is enabled |
+| [`ReleaseArtifact`](packages/release-artifact) | Builds a release archive from a staged folder: checks that the Git tree is clean, writes `release.json` and `SHA256SUMS`, zips with forward-slash entry names and a `.sha256` sidecar, and smoke-tests the finished archive by unpacking it |
 
 ## Working in this repo
 
