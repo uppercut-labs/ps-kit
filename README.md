@@ -7,6 +7,7 @@ PowerShell is part of the daily workflow here, not an afterthought: the modules 
 | Package | What it does |
 | --- | --- |
 | [`TailscaleServe`](packages/tailscale-serve) | Add, remove and list Tailscale Serve path mappings: idempotent, verified by reading the configuration back, and tailnet only because it refuses to act where Funnel is enabled |
+| [`OwnedTask`](packages/owned-task) | Registers a Windows scheduled task for a program you own, as the logged-on user, a built-in service account or a PSCredential (never a plain-text password), refuses to replace a task that belongs to someone else, and reads the task back to confirm it. Windows only |
 
 ## Working in this repo
 
