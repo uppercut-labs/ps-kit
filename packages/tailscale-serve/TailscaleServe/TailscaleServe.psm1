@@ -1,8 +1,9 @@
 #Requires -Version 5.1
 Set-StrictMode -Version Latest
 
-# Manages path mappings in Tailscale Serve. Only `tailscale serve` is ever run, never
-# `tailscale funnel`, and every change is refused when Funnel is on for the port.
+# Manages path mappings and Tailscale Services (`svc:` names) in Tailscale Serve. Only `tailscale serve` (and
+# `tailscale status` for the receipt) is ever run, never `tailscale funnel`. Path changes are refused when Funnel
+# is on for the port; a Tailscale Service is a tailnet resource, so service mode never makes anything public.
 # All calls to the CLI go through Invoke-TsNative, which is the one place a test replaces.
 
 function Get-TsProperty {
@@ -310,4 +311,232 @@ function Remove-TsServePath {
     [pscustomobject]@{ Path = $mount; HttpsPort = $HttpsPort; Changed = $true; Action = 'Removed' }
 }
 
-Export-ModuleMember -Function Get-TsServeConfig, Get-TsServePath, Add-TsServePath, Remove-TsServePath, Assert-TsNoFunnel, Get-TsServeMappingTarget, Invoke-TsNative
+# ---- Service mode (Tailscale Services, `svc:` names) ------------------------------------------------------
+
+
+function ConvertTo-TsServiceTargetKey {
+    param([string]$Target)
+    $key = $Target.Trim().ToLowerInvariant()
+    $key = $key -replace '^https?://', ''
+    $key = $key -replace '^localhost:', '127.0.0.1:'
+    return $key.TrimEnd('/')
+}
+
+function ConvertFrom-TsServiceConfigText {
+    # The service configuration file is huJSON: comments and trailing commas are allowed.
+    param([string]$Text)
+    $clean = [regex]::Replace($Text, '(?m)^\s*//.*$', '')
+    $clean = [regex]::Replace($clean, ',(\s*[}\]])', '$1')
+    try { return ($clean | ConvertFrom-Json -ErrorAction Stop) }
+    catch { throw 'The Tailscale Service configuration was not valid JSON. Nothing was changed.' }
+}
+
+function Get-TsServiceConfig {
+    <#
+    .SYNOPSIS
+    Reads Tailscale Service configuration with `tailscale serve get-config`.
+    .DESCRIPTION
+    Returns one object per service with Service, Advertised ($false only when the file says so) and Endpoints,
+    each with Port, Protocol and Target. A service that has no configuration on this node returns nothing.
+    Throws when the CLI fails or prints something that is not JSON, so a caller never acts on a guess.
+    .PARAMETER Service
+    A service name such as svc:example. Without it (or -All) every service on this node is listed.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Position = 0)][ValidatePattern('(?-i)^svc:[a-z0-9]+(?:-[a-z0-9]+)*$')][string]$Service,
+        [switch]$All,
+        [string]$Executable
+    )
+    $exe = Resolve-TsExecutable $Executable
+    $arguments = if ($Service -and -not $All) { @('serve', 'get-config', "--service=$Service") } else { @('serve', 'get-config', '--all') }
+    $result = Invoke-TsNative -Executable $exe -Arguments $arguments
+    if ($result.ExitCode -ne 0) {
+        throw "Could not read the Tailscale Service configuration (exit code $($result.ExitCode)). Nothing was changed."
+    }
+    $text = (@($result.Output) -join "`n").Trim()
+    if (-not $text) { return }
+    $config = ConvertFrom-TsServiceConfigText $text
+    foreach ($entry in @(Get-TsPropertyList (Get-TsProperty $config 'services'))) {
+        if ($Service -and -not $All -and $entry.Name -ne $Service) { continue }
+        $advertised = Get-TsProperty $entry.Value 'advertised'
+        $endpoints = foreach ($endpoint in @(Get-TsPropertyList (Get-TsProperty $entry.Value 'endpoints'))) {
+            $parts = $endpoint.Name -split ':', 2
+            [pscustomobject]@{
+                Port     = if ($parts.Count -eq 2 -and $parts[1] -match '^\d+$') { [int]$parts[1] } else { 0 }
+                Protocol = $parts[0]
+                Target   = [string]$endpoint.Value
+            }
+        }
+        [pscustomobject]@{
+            Service    = $entry.Name
+            Advertised = if ($null -eq $advertised) { $true } else { [bool]$advertised }
+            Endpoints  = @($endpoints)
+        }
+    }
+}
+
+function Get-TsServiceEndpointFor {
+    param($Config, [int]$Port)
+    if ($null -eq $Config) { return $null }
+    $found = @($Config.Endpoints | Where-Object { $_.Port -eq $Port })
+    if ($found.Count -eq 0) { return $null }
+    return $found[0]
+}
+
+function Set-TsServeService {
+    <#
+    .SYNOPSIS
+    Points a Tailscale Service at a local target and advertises this node as its host, tailnet only.
+    .DESCRIPTION
+    Runs `tailscale serve --service=<name> --https=<port> --yes <target>` then `tailscale serve advertise <name>`,
+    and reads the service configuration back to confirm it. Idempotent: when the endpoint already maps to the
+    target and the service is advertised, nothing is run and Changed is $false. A service that is configured but
+    drained (not advertised) is advertised again and nothing else is touched.
+
+    An endpoint that points somewhere else is left alone unless -Replace is given. -Reset drains and clears the
+    whole service first (every endpoint on it, as `tailscale serve clear` does) and implies -Replace; use it when
+    the service must start from nothing.
+
+    The service itself (its name, port and tags) has to be defined in the tailnet first. This function configures
+    the node that hosts it and never approves a host.
+    .PARAMETER Service
+    The service name, svc: and lower-case letters, digits and hyphens.
+    .PARAMETER Target
+    The local target: http://127.0.0.1:<port> or 127.0.0.1:<port> (localhost works too).
+    .PARAMETER Port
+    The port the service listens on, 443 by default.
+    .PARAMETER Protocol
+    Https (the default) or Http.
+    .OUTPUTS
+    An object with Service, Protocol, Port, Target, Changed, Action (Added, Updated, Advertised or Unchanged) and Advertised.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)][ValidatePattern('(?-i)^svc:[a-z0-9]+(?:-[a-z0-9]+)*$')][string]$Service,
+        [Parameter(Mandatory = $true, Position = 1)][ValidatePattern('(?-i)^(?:https?://)?(?:127\.0\.0\.1|localhost):\d{1,5}(?:/\S*)?$')][string]$Target,
+        [ValidateRange(1, 65535)][int]$Port = 443,
+        [ValidateSet('Https', 'Http')][string]$Protocol = 'Https',
+        [switch]$Replace,
+        [switch]$Reset,
+        [switch]$NoAdvertise,
+        [string]$Executable
+    )
+    $exe = Resolve-TsExecutable $Executable
+    $flag = "--$($Protocol.ToLowerInvariant())=$Port"
+    $before = @(Get-TsServiceConfig -Service $Service -Executable $exe) | Select-Object -First 1
+    $endpoint = Get-TsServiceEndpointFor -Config $before -Port $Port
+    $action = 'Added'
+    $skipSet = $false
+    if ($endpoint) {
+        if ((ConvertTo-TsServiceTargetKey $endpoint.Target) -ceq (ConvertTo-TsServiceTargetKey $Target) -and -not $Reset) {
+            if ($before.Advertised -or $NoAdvertise) {
+                return [pscustomobject]@{ Service = $Service; Protocol = $Protocol; Port = $Port; Target = $endpoint.Target; Changed = $false; Action = 'Unchanged'; Advertised = $before.Advertised }
+            }
+            $action = 'Advertised'
+            $skipSet = $true
+        } elseif (-not ($Replace -or $Reset)) {
+            throw "The Tailscale Service $Service already maps tcp:$Port to $($endpoint.Target). Use -Replace to point it at $Target, or -Reset to clear the service first. It was left unchanged."
+        } else {
+            $action = 'Updated'
+        }
+    }
+    if (-not $PSCmdlet.ShouldProcess("$Service on $Protocol port $Port", "Map to $Target")) { return }
+
+    if ($Reset -and $before) {
+        $null = Invoke-TsChecked -Executable $exe -Arguments @('serve', 'drain', $Service)
+        $null = Invoke-TsChecked -Executable $exe -Arguments @('serve', 'clear', $Service)
+        if ($action -eq 'Advertised') { $action = 'Updated' }
+        $skipSet = $false
+    }
+    if (-not $skipSet) {
+        $null = Invoke-TsChecked -Executable $exe -Arguments @('serve', "--service=$Service", $flag, '--yes', $Target)
+    }
+    if (-not $NoAdvertise) {
+        $null = Invoke-TsChecked -Executable $exe -Arguments @('serve', 'advertise', $Service)
+    }
+
+    $after = @(Get-TsServiceConfig -Service $Service -Executable $exe) | Select-Object -First 1
+    $confirmed = Get-TsServiceEndpointFor -Config $after -Port $Port
+    if (-not $confirmed -or (ConvertTo-TsServiceTargetKey $confirmed.Target) -cne (ConvertTo-TsServiceTargetKey $Target)) {
+        $observed = if ($confirmed) { $confirmed.Target } else { '<absent>' }
+        throw "Tailscale accepted the commands, but '$Service tcp:$Port -> $Target' was not confirmed (observed '$observed')."
+    }
+    if (-not $NoAdvertise -and -not $after.Advertised) {
+        throw "Tailscale accepted the commands, but $Service is still not advertised by this node."
+    }
+    [pscustomobject]@{ Service = $Service; Protocol = $Protocol; Port = $Port; Target = $confirmed.Target; Changed = $true; Action = $action; Advertised = $after.Advertised }
+}
+
+function Remove-TsServeService {
+    <#
+    .SYNOPSIS
+    Drains a Tailscale Service from this node and clears its configuration.
+    .DESCRIPTION
+    Idempotent: a service with no configuration on this node gives Changed $false. Drain stops new connections
+    and lets existing ones finish. Afterwards the configuration is read back and must be gone.
+    .OUTPUTS
+    An object with Service, Changed and Action (Removed or Absent).
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)][ValidatePattern('(?-i)^svc:[a-z0-9]+(?:-[a-z0-9]+)*$')][string]$Service,
+        [string]$Executable
+    )
+    $exe = Resolve-TsExecutable $Executable
+    $before = @(Get-TsServiceConfig -Service $Service -Executable $exe)
+    if ($before.Count -eq 0) { return [pscustomobject]@{ Service = $Service; Changed = $false; Action = 'Absent' } }
+    if (-not $PSCmdlet.ShouldProcess($Service, 'Drain and clear the Tailscale Service on this node')) { return }
+    $null = Invoke-TsChecked -Executable $exe -Arguments @('serve', 'drain', $Service)
+    $null = Invoke-TsChecked -Executable $exe -Arguments @('serve', 'clear', $Service)
+    $left = @(Get-TsServiceConfig -Service $Service -Executable $exe)
+    if ($left.Count -gt 0) { throw "The Tailscale Service $Service is still configured after removal." }
+    [pscustomobject]@{ Service = $Service; Changed = $true; Action = 'Removed' }
+}
+
+function Get-TsServiceReceipt {
+    <#
+    .SYNOPSIS
+    A read-only record of a service as this node serves it: the configuration, the other services, and the node.
+    .DESCRIPTION
+    Reads `serve get-config` for the service and for all services, and `tailscale status --json` for the node's
+    id, host name and `service-host` capability. Changes nothing. With -Path the receipt is also written as
+    UTF-8 JSON without a byte order mark. The receipt holds node identifiers, so keep it where the node's other
+    records are kept.
+    .OUTPUTS
+    An object with Service, Config, Services, DeviceId, HostName, ServiceHost and ReadAt.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true, Position = 0)][ValidatePattern('(?-i)^svc:[a-z0-9]+(?:-[a-z0-9]+)*$')][string]$Service,
+        [string]$Path,
+        [string]$Executable
+    )
+    $exe = Resolve-TsExecutable $Executable
+    $config = @(Get-TsServiceConfig -Service $Service -Executable $exe) | Select-Object -First 1
+    $services = @(Get-TsServiceConfig -All -Executable $exe | ForEach-Object { $_.Service })
+    $statusResult = Invoke-TsNative -Executable $exe -Arguments @('status', '--json')
+    if ($statusResult.ExitCode -ne 0) { throw "Could not read the Tailscale status (exit code $($statusResult.ExitCode))." }
+    try { $status = (@($statusResult.Output) -join "`n") | ConvertFrom-Json -ErrorAction Stop }
+    catch { throw 'The Tailscale status was not valid JSON.' }
+    $self = Get-TsProperty $status 'Self'
+    $capMap = Get-TsProperty $self 'CapMap'
+    $receipt = [pscustomobject]@{
+        Service     = $Service
+        Config      = $config
+        Services    = $services
+        DeviceId    = Get-TsProperty $self 'ID'
+        HostName    = Get-TsProperty $self 'HostName'
+        ServiceHost = Get-TsProperty $capMap 'service-host'
+        ReadAt      = (Get-Date).ToUniversalTime().ToString('o')
+    }
+    if ($Path) {
+        $folder = Split-Path -Parent ([IO.Path]::GetFullPath($Path))
+        if ($folder -and -not (Test-Path -LiteralPath $folder)) { New-Item -ItemType Directory -Force -Path $folder | Out-Null }
+        [IO.File]::WriteAllText([IO.Path]::GetFullPath($Path), ($receipt | ConvertTo-Json -Depth 8), (New-Object System.Text.UTF8Encoding($false)))
+    }
+    $receipt
+}
+
+
+Export-ModuleMember -Function Get-TsServeConfig, Get-TsServePath, Add-TsServePath, Remove-TsServePath, Assert-TsNoFunnel, Get-TsServeMappingTarget, Invoke-TsNative, Get-TsServiceConfig, Set-TsServeService, Remove-TsServeService, Get-TsServiceReceipt
