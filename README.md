@@ -7,6 +7,7 @@ PowerShell is part of the daily workflow here, not an afterthought: the modules 
 | Package | What it does |
 | --- | --- |
 | [`TailscaleServe`](packages/tailscale-serve) | Add, remove and list Tailscale Serve path mappings: idempotent, verified by reading the configuration back, and tailnet only because it refuses to act where Funnel is enabled |
+| [`OwnedTask`](packages/owned-task) | Registers a Windows scheduled task for a program you own, as the logged-on user, a built-in service account or a PSCredential (never a plain-text password), refuses to replace a task that belongs to someone else, and reads the task back to confirm it. Windows only |
 | [`NoActivate`](packages/no-activate) | Starts a Windows program so its first window never takes keyboard focus, keeps its windows on one display without activating them, and can run it on a private desktop that is never shown. Windows only |
 | [`ProcessTreeMemory`](packages/process-tree-memory) | Private memory and working set summed over a Windows process and all of its descendants, with an optional budget and ceiling check. Windows only |
 | [`ForegroundSampler`](packages/foreground-sampler) | Samples the Windows foreground window and writes a JSON line per change; with `-App`, reports whether an app's window came to the front. Windows only |
