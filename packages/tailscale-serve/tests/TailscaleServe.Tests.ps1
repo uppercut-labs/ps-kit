@@ -24,7 +24,7 @@ BeforeAll {
         if ($fake.FailSet) { return (& $fail 'set failed') }
         $port = ($Arguments | Where-Object { $_ -like '--https=*' } | Select-Object -First 1) -replace '^--https=', ''
         $mount = ($Arguments | Where-Object { $_ -like '--set-path=*' } | Select-Object -First 1) -replace '^--set-path=', ''
-        $hostPort = "machine.example.ts.net:$port"
+        $hostPort = "machine.example.invalid:$port"
         if ($fake.IgnoreSet) { return (& $ok @()) }
         if ($Arguments[-1] -eq 'off') {
             if ($fake.Web.Contains($hostPort) -and $fake.Web[$hostPort].Handlers.Contains($mount)) {
@@ -46,7 +46,7 @@ BeforeAll {
             Calls = New-Object System.Collections.Generic.List[string]
             Tcp = [ordered]@{ '443' = @{ HTTPS = $true } }
             Web = [ordered]@{
-                'machine.example.ts.net:443' = @{ Handlers = [ordered]@{ '/' = @{ Proxy = 'http://127.0.0.1:8787' } } }
+                'machine.example.invalid:443' = @{ Handlers = [ordered]@{ '/' = @{ Proxy = 'http://127.0.0.1:8787' } } }
             }
             AllowFunnel = [ordered]@{}
             FailStatus = $false; FailSet = $false; IgnoreSet = $false; Disturb = $false; RawStatus = $null
@@ -71,7 +71,7 @@ Describe 'with a mocked tailscale CLI' {
     Describe 'Get-TsServeConfig' {
         It 'parses the JSON status' {
             $config = Get-TsServeConfig -Executable 'tailscale'
-            $config.Web.'machine.example.ts.net:443'.Handlers.'/'.Proxy | Should -Be 'http://127.0.0.1:8787'
+            $config.Web.'machine.example.invalid:443'.Handlers.'/'.Proxy | Should -Be 'http://127.0.0.1:8787'
             $global:TsFake.Calls[0] | Should -Be 'serve status --json'
         }
         It 'returns an empty object when nothing is served' {
@@ -84,17 +84,17 @@ Describe 'with a mocked tailscale CLI' {
             { Get-TsServeConfig -Executable 'tailscale' } | Should -Throw '*Could not read*exit code 1*'
         }
         It 'throws when the output is not JSON' {
-            $global:TsFake.RawStatus = 'https://machine.example.ts.net (tailnet only)'
+            $global:TsFake.RawStatus = 'https://machine.example.invalid (tailnet only)'
             { Get-TsServeConfig -Executable 'tailscale' } | Should -Throw '*not valid JSON*'
         }
     }
 
     Describe 'Get-TsServePath' {
         BeforeEach {
-            $h = $global:TsFake.Web['machine.example.ts.net:443'].Handlers
+            $h = $global:TsFake.Web['machine.example.invalid:443'].Handlers
             $h['/env/'] = @{ Proxy = 'http://127.0.0.1:8799/env' }
             $h['/files'] = @{ Path = '/srv/files' }
-            $global:TsFake.Web['machine.example.ts.net:8460'] = @{ Handlers = [ordered]@{ '/' = @{ Proxy = 'http://127.0.0.1:4420' } } }
+            $global:TsFake.Web['machine.example.invalid:8460'] = @{ Handlers = [ordered]@{ '/' = @{ Proxy = 'http://127.0.0.1:4420' } } }
         }
         It 'lists every mapping with its kind and target' {
             $paths = @(Get-TsServePath -Executable 'tailscale')
@@ -125,12 +125,12 @@ Describe 'with a mocked tailscale CLI' {
             { Assert-TsNoFunnel -Config (Get-TsServeConfig -Executable 'tailscale') } | Should -Not -Throw
         }
         It 'throws when Funnel is on for the port' {
-            $global:TsFake.AllowFunnel['machine.example.ts.net:443'] = $true
+            $global:TsFake.AllowFunnel['machine.example.invalid:443'] = $true
             { Assert-TsNoFunnel -Config (Get-TsServeConfig -Executable 'tailscale') } | Should -Throw '*Funnel is enabled on HTTPS port 443*'
         }
         It 'ignores Funnel on another port and entries set to false' {
-            $global:TsFake.AllowFunnel['machine.example.ts.net:8443'] = $true
-            $global:TsFake.AllowFunnel['machine.example.ts.net:443'] = $false
+            $global:TsFake.AllowFunnel['machine.example.invalid:8443'] = $true
+            $global:TsFake.AllowFunnel['machine.example.invalid:443'] = $false
             { Assert-TsNoFunnel -Config (Get-TsServeConfig -Executable 'tailscale') } | Should -Not -Throw
         }
     }
@@ -141,7 +141,7 @@ Describe 'with a mocked tailscale CLI' {
             $result.Action | Should -Be 'Added'
             $result.Changed | Should -BeTrue
             Get-TsSetCalls | Should -Be @('serve --bg --yes --https=443 --set-path=/env http://127.0.0.1:8799/env')
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/env'].Proxy | Should -Be 'http://127.0.0.1:8799/env'
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/env'].Proxy | Should -Be 'http://127.0.0.1:8799/env'
         }
         It 'is idempotent: a second call runs nothing' {
             $null = Add-TsServePath -Path '/env' -Target 'http://127.0.0.1:8799/env' -Executable 'tailscale'
@@ -152,27 +152,27 @@ Describe 'with a mocked tailscale CLI' {
             Get-TsSetCalls | Should -BeNullOrEmpty
         }
         It 'treats a trailing slash on the mount or target as the same mapping' {
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/env/'] = @{ Proxy = 'http://127.0.0.1:8799/env/' }
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/env/'] = @{ Proxy = 'http://127.0.0.1:8799/env/' }
             $result = Add-TsServePath -Path '/env' -Target 'http://127.0.0.1:8799/env' -Executable 'tailscale'
             $result.Changed | Should -BeFalse
             Get-TsSetCalls | Should -BeNullOrEmpty
         }
         It 'leaves a path that points elsewhere alone unless -Force is given' {
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/env'] = @{ Proxy = 'http://127.0.0.1:9000' }
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/env'] = @{ Proxy = 'http://127.0.0.1:9000' }
             { Add-TsServePath -Path '/env' -Target 'http://127.0.0.1:8799/env' -Executable 'tailscale' } | Should -Throw '*already maps to Proxy http://127.0.0.1:9000*-Force*'
             Get-TsSetCalls | Should -BeNullOrEmpty
             $result = Add-TsServePath -Path '/env' -Target 'http://127.0.0.1:8799/env' -Force -Executable 'tailscale'
             $result.Action | Should -Be 'Updated'
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/env'].Proxy | Should -Be 'http://127.0.0.1:8799/env'
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/env'].Proxy | Should -Be 'http://127.0.0.1:8799/env'
         }
         It 'replaces under the existing mount spelling' {
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/env/'] = @{ Proxy = 'http://127.0.0.1:9000' }
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/env/'] = @{ Proxy = 'http://127.0.0.1:9000' }
             $result = Add-TsServePath -Path '/env' -Target 'http://127.0.0.1:8799/env' -Force -Executable 'tailscale'
             $result.Path | Should -Be '/env/'
             @(Get-TsSetCalls)[0] | Should -BeLike '*--set-path=/env/ *'
         }
         It 'refuses to touch a port where Funnel is enabled' {
-            $global:TsFake.AllowFunnel['machine.example.ts.net:443'] = $true
+            $global:TsFake.AllowFunnel['machine.example.invalid:443'] = $true
             { Add-TsServePath -Path '/env' -Target 'http://127.0.0.1:8799' -Executable 'tailscale' } | Should -Throw '*Funnel is enabled*'
             Get-TsSetCalls | Should -BeNullOrEmpty
         }
@@ -220,19 +220,19 @@ Describe 'with a mocked tailscale CLI' {
         }
         It 'keeps the other mappings in place' {
             $null = Add-TsServePath -Path '/env' -Target 'http://127.0.0.1:8799' -Executable 'tailscale'
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/'].Proxy | Should -Be 'http://127.0.0.1:8787'
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/'].Proxy | Should -Be 'http://127.0.0.1:8787'
         }
     }
 
     Describe 'Remove-TsServePath' {
         BeforeEach {
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/env'] = @{ Proxy = 'http://127.0.0.1:8799/env' }
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/env'] = @{ Proxy = 'http://127.0.0.1:8799/env' }
         }
         It 'removes one path and nothing else' {
             $result = Remove-TsServePath -Path '/env' -Executable 'tailscale'
             $result.Action | Should -Be 'Removed'
             Get-TsSetCalls | Should -Be @('serve --https=443 --set-path=/env off')
-            $handlers = $global:TsFake.Web['machine.example.ts.net:443'].Handlers
+            $handlers = $global:TsFake.Web['machine.example.invalid:443'].Handlers
             $handlers.Contains('/env') | Should -BeFalse
             $handlers['/'].Proxy | Should -Be 'http://127.0.0.1:8787'
         }
@@ -248,13 +248,13 @@ Describe 'with a mocked tailscale CLI' {
             (Remove-TsServePath -Path '/' -AllowRoot -Executable 'tailscale').Action | Should -Be 'Removed'
         }
         It 'removes under the existing mount spelling' {
-            $global:TsFake.Web['machine.example.ts.net:443'].Handlers['/docs/'] = @{ Proxy = 'http://127.0.0.1:5000' }
+            $global:TsFake.Web['machine.example.invalid:443'].Handlers['/docs/'] = @{ Proxy = 'http://127.0.0.1:5000' }
             $result = Remove-TsServePath -Path '/docs' -Executable 'tailscale'
             $result.Path | Should -Be '/docs/'
             @(Get-TsSetCalls)[0] | Should -Be 'serve --https=443 --set-path=/docs/ off'
         }
         It 'refuses to touch a port where Funnel is enabled' {
-            $global:TsFake.AllowFunnel['machine.example.ts.net:443'] = $true
+            $global:TsFake.AllowFunnel['machine.example.invalid:443'] = $true
             { Remove-TsServePath -Path '/env' -Executable 'tailscale' } | Should -Throw '*Funnel is enabled*'
         }
         It 'throws when the path is still there afterwards' {
@@ -271,7 +271,7 @@ Describe 'with a mocked tailscale CLI' {
 Describe 'Get-TsServeMappingTarget' {
     BeforeAll {
         $script:status = @'
-https://machine.example.ts.net (tailnet only)
+https://machine.example.invalid (tailnet only)
 |-- /          proxy http://127.0.0.1:8787
 |-- /textbooks proxy http://127.0.0.1:8766/textbooks
 '@
