@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'OwnedTask.psm1'
-    ModuleVersion         = '0.1.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = '7d2c9a64-5b3e-4f1a-8e60-2a9d4c1b7f35'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'

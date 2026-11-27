@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'RunAsUserShortcut.psm1'
-    ModuleVersion         = '0.1.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = '13986c14-d2ce-4f34-bef8-e27431e9242d'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'

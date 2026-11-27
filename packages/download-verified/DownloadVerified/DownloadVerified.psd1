@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'DownloadVerified.psm1'
-    ModuleVersion         = '0.1.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = 'c2a5e8b1-6f47-4d93-a0e2-8b13d7f5c649'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'

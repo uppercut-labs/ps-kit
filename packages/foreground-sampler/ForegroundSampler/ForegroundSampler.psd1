@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'ForegroundSampler.psm1'
-    ModuleVersion         = '0.1.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = 'd6019afe-7c98-41fe-a939-9b3937a90cd2'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'
