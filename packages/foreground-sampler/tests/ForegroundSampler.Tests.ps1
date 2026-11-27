@@ -13,10 +13,12 @@ BeforeAll {
     }
 
     Mock -ModuleName ForegroundSampler Start-Sleep {}
+    # Get-Process takes -Id as int[], so the mock does too.
     Mock -ModuleName ForegroundSampler Get-Process {
-        param([int]$Id)
-        if ($global:FgPaths.ContainsKey($Id)) { [pscustomobject]@{ Id = $Id; Path = $global:FgPaths[$Id] } }
-        else { throw "no process $Id" }
+        param([int[]]$Id)
+        $one = $Id[0]
+        if ($global:FgPaths.ContainsKey($one)) { [pscustomobject]@{ Id = $one; Path = $global:FgPaths[$one] } }
+        else { throw "no process $one" }
     }
     Mock -ModuleName ForegroundSampler Get-ForegroundSample {
         $index = [Math]::Min($global:FgIndex, $global:FgReadings.Count - 1)

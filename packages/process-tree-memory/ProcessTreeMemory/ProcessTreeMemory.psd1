@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'ProcessTreeMemory.psm1'
-    ModuleVersion         = '0.1.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = '3e4b3131-1a05-4a6f-85f4-ce655f70a742'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'

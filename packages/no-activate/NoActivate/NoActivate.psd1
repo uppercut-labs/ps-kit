@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'NoActivate.psm1'
-    ModuleVersion         = '0.1.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = 'b6f0b2de-8a27-4c0e-9d1c-3e5a71c4f2a9'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'

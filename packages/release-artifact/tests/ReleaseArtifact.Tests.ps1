@@ -152,7 +152,7 @@ Describe 'ReleaseArtifact' {
             Set-RaFile $stage 'b.txt' 'bee'
             Set-RaFile $stage 'a.txt' 'aye'
             Set-RaFile $stage 'dir/c.txt' 'sea'
-            Set-RaFile $stage 'B.txt' 'upper'
+            Set-RaFile $stage 'C.txt' 'upper'
         }
         It 'writes lower-case hash, two spaces, forward-slash path, sorted ordinally, ASCII, Unix line ends' {
             $lines = Write-Sha256Sums -Root $stage
@@ -161,8 +161,8 @@ Describe 'ReleaseArtifact' {
             $text.Contains("`r") | Should -BeFalse
             $text.EndsWith("`n") | Should -BeTrue
             $paths = @($text.TrimEnd("`n") -split "`n" | ForEach-Object { $_.Substring(66) })
-            $paths | Should -Be @('B.txt', 'a.txt', 'b.txt', 'dir/c.txt')
-            $text | Should -Match '^[0-9a-f]{64}  B\.txt\n'
+            $paths | Should -Be @('C.txt', 'a.txt', 'b.txt', 'dir/c.txt')
+            $text | Should -Match '^[0-9a-f]{64}  C\.txt\n'
         }
         It 'does not list the sums file itself and can be run twice with the same result' {
             Write-Sha256Sums -Root $stage | Out-Null

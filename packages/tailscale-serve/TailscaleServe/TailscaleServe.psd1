@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'TailscaleServe.psm1'
-    ModuleVersion         = '0.2.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = '5e7f0b1c-3b0d-4a43-9d57-6f2c1f6e7a10'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'

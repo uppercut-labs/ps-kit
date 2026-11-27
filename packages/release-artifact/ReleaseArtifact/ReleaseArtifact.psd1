@@ -1,6 +1,6 @@
-@{
+﻿@{
     RootModule            = 'ReleaseArtifact.psm1'
-    ModuleVersion         = '0.1.0'
+    ModuleVersion         = '1.0.0'
     GUID                  = '4e9b7c20-d1a3-4f68-b5e7-0c8a2d6f3b91'
     Author                = 'Uppercut Labs'
     CompanyName           = 'Uppercut Labs'
